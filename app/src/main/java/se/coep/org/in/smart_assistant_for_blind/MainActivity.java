@@ -2,14 +2,21 @@ package se.coep.org.in.smart_assistant_for_blind;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.NotificationManager;
+import android.app.ProgressDialog;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.provider.ContactsContract;
 import android.provider.Settings;
+import android.service.notification.NotificationListenerService;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
@@ -19,6 +26,7 @@ import android.support.annotation.NonNull;
 import android.support.annotation.RequiresApi;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
+import android.support.v4.content.LocalBroadcastManager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.telephony.TelephonyManager;
@@ -33,6 +41,16 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Properties;
+
+import javax.mail.BodyPart;
+import javax.mail.Flags;
+import javax.mail.Folder;
+import javax.mail.Message;
+import javax.mail.Multipart;
+import javax.mail.Session;
+import javax.mail.Store;
+import javax.mail.search.FlagTerm;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -42,10 +60,18 @@ public class MainActivity extends AppCompatActivity {
     private Intent callIntent;
     String aNameFromContacts[];
     String aNumberFromContacts[];
+    String anEmailFromContacts[];
     boolean callFlag = false;
+    boolean mailFlag = false;
     private boolean isPhoneCalling = false;
     private boolean mismatchFlag = false;
     private boolean messageFlag = true;
+    private boolean mailNotificationFlag = true;
+    private boolean isThereNotification = false;
+    private boolean newNotificationsFlag = false;
+
+    ArrayList<String> mails = new ArrayList<>();
+    ArrayList<String> notificationsList = new ArrayList<>();
 
     private final int OBJECT_DETECTION_ACTIVITY = 1;
     private final int MESSAGE_HANDLING_ACTIVITY = 2;
@@ -65,12 +91,22 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        ComponentName cn = new ComponentName(this, NotificationService.class);
+        String flat = Settings.Secure.getString(this.getContentResolver(), "enabled_notification_listeners");
+        final boolean enabled = flat != null && flat.contains(cn.flattenToString());
+
+        if (!enabled) {
+            startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
+        }
         if(!hasPermissions(this, PERMISSIONS)){
             ActivityCompat.requestPermissions(this, PERMISSIONS, PERMISSION_ALL);
         } else {
             Cursor contacts = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null);
+            Cursor emailid = getContentResolver().query(ContactsContract.CommonDataKinds.Email.CONTENT_URI, null, null, null, null);
+
             aNameFromContacts = new String[contacts.getCount()];
             aNumberFromContacts = new String[contacts.getCount()];
+            anEmailFromContacts = new String[contacts.getCount()];
             int j = 0;
 
             if (contacts != null) {
@@ -80,6 +116,10 @@ public class MainActivity extends AppCompatActivity {
                     int indexOfNormalizedNumber = contacts.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NORMALIZED_NUMBER);
                     int indexOfDisplayName = contacts.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
                     int indexOfDisplayNumber = contacts.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
+                    //int indexOfEmail = contacts.getColumnIndex(ContactsContract.CommonDataKinds.Email.DATA6);
+
+                    int nameId = emailid.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
+                    int emailIdx = emailid.getColumnIndex(ContactsContract.CommonDataKinds.Email.DATA);
 
                     while (contacts.moveToNext()) {
                         String normalizedNumber = contacts.getString(indexOfNormalizedNumber);
@@ -89,6 +129,24 @@ public class MainActivity extends AppCompatActivity {
                             aNameFromContacts[j] = displayName;
                             String displayNumber = contacts.getString(indexOfDisplayNumber);
                             aNumberFromContacts[j] = displayNumber;
+
+                            anEmailFromContacts[j] = "";
+
+                            emailid.moveToFirst();
+
+                            while(emailid.moveToNext()) {
+                                String email = emailid.getString(emailIdx);
+                                String name = emailid.getString(nameId);
+                                //Log.i("email", email);
+                                //Log.i("name", name);
+                                if(name.equals(displayName)) {
+                                    anEmailFromContacts[j] = email;
+                                    Log.i("email", email);
+                                    break;
+                                }
+                            }
+                            if (anEmailFromContacts[j].equals(""))
+                                anEmailFromContacts[j] = null;
                             j++;
                         }
                     }
@@ -99,9 +157,8 @@ public class MainActivity extends AppCompatActivity {
             }
 
         }
-
+        LocalBroadcastManager.getInstance(this).registerReceiver(onNotice, new IntentFilter("Msg"));
         startSTTandTTS();
-
     }
 
     public static boolean hasPermissions(Context context, String... permissions) {
@@ -142,27 +199,28 @@ public class MainActivity extends AppCompatActivity {
         mSpeechRecognizer.setRecognitionListener(new RecognitionListener() {
             @Override
             public void onReadyForSpeech(Bundle bundle) {
-
+                Log.i("onreadyforspeech", "hey");
             }
 
             @Override
             public void onBeginningOfSpeech() {
+                Log.i("onbeginningofspeech", "hey");
 
             }
 
             @Override
             public void onRmsChanged(float v) {
-
+               // Log.i("onrmschanged", "hey");
             }
 
             @Override
             public void onBufferReceived(byte[] bytes) {
-
+                Log.i("buffer", "hey");
             }
 
             @Override
             public void onEndOfSpeech() {
-
+                Log.i("endofspeech", "hey");
             }
 
             @Override
@@ -225,12 +283,60 @@ public class MainActivity extends AppCompatActivity {
                                                 handleTextMessages();
                                             } else if ((result.replaceAll(" ", "").toLowerCase()).equals("sendmail") || (result.replaceAll(" ", "").replaceAll("-", "").toLowerCase()).equals("sendemail")) {
                                                 handleEmail();
+                                            } else if ((result.toLowerCase().equals("yes") || result.toLowerCase().equals("no")) && newNotificationsFlag) {
+                                                newNotificationsFlag = false;
+                                                if (result.toLowerCase().equals("no")) {
+                                                    isThereNotification = false;
+                                                    mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
+                                                } else {
+                                                    readNotificationsContent();
+                                                    //mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
+                                                }
+                                            } else if(result.toLowerCase().replaceAll(" ", "").equals("shownotifications")){
+                                               // mSpeechRecognizer.stopListening();
+                                                if (isThereNotification) {
+                                                    speakOutNotifications();
+                                                } else {
+                                                    HashMap<String, String> noNotifications = new HashMap();
+                                                    noNotifications.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID,
+                                                            "noNotifications");
+                                                    tts.speak("No notifications yet.", TextToSpeech.QUEUE_FLUSH, noNotifications);
+                                                    //mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
+                                                }
                                             } else {
                                                 mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
                                             }
                                         }
                                     });
-                                } else if(s.equals("utteranceId2")) {
+                                } else if(s.equals("noNotifications")) {
+                                    runOnUiThread(new Runnable() {
+
+                                        @Override
+                                        public void run() {
+                                            mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
+                                        }
+                                    });
+                                } else if(s.equals("newNotifications")) {
+                                    newNotificationsFlag = true;
+                                    runOnUiThread(new Runnable() {
+
+                                        @Override
+                                        public void run() {
+                                            mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
+                                        }
+                                    });
+                                } else if(s.equals("afterReadingNotifications")) {
+                                    runOnUiThread(new Runnable() {
+
+                                        @Override
+                                        public void run() {
+                                            NotificationManager notificationManager = (NotificationManager) getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
+                                            notificationManager.cancelAll();
+                                            notificationsList.clear();
+                                            mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
+                                        }
+                                    });
+                                } else if(s.equals("end of wakeup message ID")) {
 
                                 }
                             }
@@ -250,19 +356,29 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onPartialResults(Bundle bundle) {
-
+                Log.i("onPartial", "hey");
             }
 
             @Override
             public void onEvent(int i, Bundle bundle) {
+                Log.i("onEvent", "hey");
 
             }
         });
+
+        /*if (isThereNotification) {
+            Log.i("herh", "herh");
+            speakOutNotifications();
+        }*/
+
         mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
     }
 
     private void handleEmail() {
+        mailFlag = true;
         Intent emailIntent = new Intent(this, EmailHandlingActivity.class);
+        emailIntent.putExtra("anEmailFromContacts", anEmailFromContacts);
+        emailIntent.putExtra("aNameFromContacts", aNameFromContacts);
         startActivity(emailIntent);
     }
 
@@ -336,8 +452,11 @@ public class MainActivity extends AppCompatActivity {
                             if (grantResults[i] == PackageManager.PERMISSION_GRANTED) {
                                 Log.i("permission_granted", "granted");
                                 Cursor contacts = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null, null, null, null);
+                                Cursor emailid = getContentResolver().query(ContactsContract.CommonDataKinds.Email.CONTENT_URI, null, null, null, null);
+
                                 aNameFromContacts = new String[contacts.getCount()];
                                 aNumberFromContacts = new String[contacts.getCount()];
+                                anEmailFromContacts = new String[contacts.getCount()];
                                 int j = 0;
 
                                 if (contacts != null) {
@@ -347,6 +466,10 @@ public class MainActivity extends AppCompatActivity {
                                         int indexOfNormalizedNumber = contacts.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NORMALIZED_NUMBER);
                                         int indexOfDisplayName = contacts.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
                                         int indexOfDisplayNumber = contacts.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
+                                        //int indexOfEmail = contacts.getColumnIndex(ContactsContract.CommonDataKinds.Email.DATA6);
+
+                                        int nameId = emailid.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
+                                        int emailIdx = emailid.getColumnIndex(ContactsContract.CommonDataKinds.Email.DATA);
 
                                         while (contacts.moveToNext()) {
                                             String normalizedNumber = contacts.getString(indexOfNormalizedNumber);
@@ -356,8 +479,25 @@ public class MainActivity extends AppCompatActivity {
                                                 aNameFromContacts[j] = displayName;
                                                 String displayNumber = contacts.getString(indexOfDisplayNumber);
                                                 aNumberFromContacts[j] = displayNumber;
+
+                                                anEmailFromContacts[j] = "";
+
+                                                emailid.moveToFirst();
+
+                                                while(emailid.moveToNext()) {
+                                                    String email = emailid.getString(emailIdx);
+                                                    String name = emailid.getString(nameId);
+                                                    //Log.i("email", email);
+                                                    //Log.i("name", name);
+                                                    if(name.equals(displayName)) {
+                                                        anEmailFromContacts[j] = email;
+                                                        Log.i("email", email);
+                                                        break;
+                                                    }
+                                                }
+                                                if (anEmailFromContacts[j].equals(""))
+                                                    anEmailFromContacts[j] = null;
                                                 j++;
-                                                //haven't seen this number yet: do something with this contact!
                                             }
                                         }
                                     } finally {
@@ -478,12 +618,87 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
-        if ((callFlag && isPhoneCalling) || messageFlag) {
+        if ((callFlag && isPhoneCalling) || messageFlag || mailFlag) {
             Log.i("resume", "resume");
             callFlag = false;
             messageFlag = false;
+            mailFlag = false;
+            /*if (isThereNotification) {
+                speakOutNotifications();
+            }*/
             startSTTandTTS();
             //mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
         }
+    }
+
+    private BroadcastReceiver onNotice= new BroadcastReceiver() {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String pack = intent.getStringExtra("package");
+            String title = intent.getStringExtra("title");
+            title = title.replaceAll("[^a-zA-Z0-9 ]*", "");
+            //title = title.concat(" contains emojis");
+            String text = intent.getStringExtra("text");
+            String extraBigText = intent.getStringExtra("extraBigText");
+
+            Log.i("package", pack);
+            Log.i("text", text);
+
+            /*if (pack.toLowerCase().endsWith("gm")) {
+                mailNotificationFlag = true;
+            }*/
+
+            if (!(pack.toLowerCase().endsWith("contacts") || pack.toLowerCase().endsWith("systemui"))) {
+                notificationsList.add(pack);
+                notificationsList.add(title);
+                notificationsList.add(text);
+                notificationsList.add(extraBigText);
+
+                isThereNotification = true;
+            }
+        }
+    };
+
+    private void speakOutNotifications() {
+            HashMap<String, String> newNotifications = new HashMap();
+            newNotifications.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID,
+                    "newNotifications");
+            tts.speak("You have new notifications. Do you want to listen to them?", TextToSpeech.QUEUE_FLUSH, newNotifications);
+    }
+
+    private void readNotificationsContent() {
+        isThereNotification = false;
+
+        mSpeechRecognizer.stopListening();
+
+        for (int i = 0; i<(notificationsList.size()); i+=4) {
+            if (notificationsList.get(i).split("\\.")[notificationsList.get(i).split("\\.").length - 1].toLowerCase().equals("mms")) {
+                tts.speak("You have a new text message. ", TextToSpeech.QUEUE_ADD, null);
+                tts.speak("The sender is " + notificationsList.get(i+1), TextToSpeech.QUEUE_ADD, null);
+                tts.speak("The content is " + notificationsList.get(i+2), TextToSpeech.QUEUE_ADD, null);
+            } else if (notificationsList.get(i).split("\\.")[notificationsList.get(i).split("\\.").length - 1].toLowerCase().equals("whatsapp")) {
+                if (notificationsList.get(i + 2).contains(" messages from ") && notificationsList.get(i + 2).endsWith("chats")) {
+
+                } else {
+                    tts.speak("You have a new whatsapp message. ", TextToSpeech.QUEUE_ADD, null);
+                    tts.speak("The sender is " + notificationsList.get(i + 1), TextToSpeech.QUEUE_ADD, null);
+                    tts.speak("The content is " + notificationsList.get(i + 2), TextToSpeech.QUEUE_ADD, null);
+                }
+            } else if (notificationsList.get(i).split("\\.")[notificationsList.get(i).split("\\.").length - 1].toLowerCase().equals("gm")) {
+                  tts.speak("You have a new mail. ", TextToSpeech.QUEUE_ADD, null);
+                  tts.speak("The sender is " + notificationsList.get(i + 1), TextToSpeech.QUEUE_ADD, null);
+                  tts.speak("The subject is " + notificationsList.get(i + 2), TextToSpeech.QUEUE_ADD, null);
+                  tts.speak("The content is " + notificationsList.get(i + 3).replace(notificationsList.get(i+2), "").trim(), TextToSpeech.QUEUE_ADD, null);
+
+            }
+            /*if (notificationsList.get(i+2) != "") {
+                tts.speak("The content is" + notificationsList.get(i+2), TextToSpeech.QUEUE_ADD, null);
+            }*/
+        }
+        HashMap<String, String> afterNotifications = new HashMap();
+        afterNotifications.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID,
+                "afterReadingNotifications");
+        tts.speak("Done with the notifications", TextToSpeech.QUEUE_ADD, afterNotifications);
     }
 }

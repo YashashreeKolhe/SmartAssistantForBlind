@@ -78,8 +78,7 @@
         android:layout_alignStart="@+id/messageTextView"
         android:ems="10"
         android:inputType="textEmailAddress"
-        android:text="someone@domain.com"
-        android:textAppearance="@style/f" />
+        android:text="someone@domain.com" />
 
     <EditText
         android:id="@+id/editText3"

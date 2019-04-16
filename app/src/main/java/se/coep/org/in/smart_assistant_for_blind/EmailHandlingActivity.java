@@ -32,11 +32,17 @@ public class EmailHandlingActivity extends AppCompatActivity {
     boolean contentsFlag = false;
     boolean senderFlag = false;
     boolean subjectFlag = false;
+    String[] anEmailFromContacts;
+    String[] aNameFromContacts;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_email_handling);
+
+        Intent receivedIntent = getIntent();
+        anEmailFromContacts = receivedIntent.getStringArrayExtra("anEmailFromContacts");
+        aNameFromContacts = receivedIntent.getStringArrayExtra("aNameFromContacts");
 
         startSTT();
 
@@ -76,7 +82,7 @@ public class EmailHandlingActivity extends AppCompatActivity {
                             }
                         });
                     }else if(s.equals("utteranceId1")) {
-                        runOnUiThread(new Runnable() {
+                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
                                 mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
@@ -103,7 +109,12 @@ public class EmailHandlingActivity extends AppCompatActivity {
                         /*mSpeechRecognizer.stopListening();
                         mSpeechRecognizer.destroy();
                         tts2.stop();*/
-                        finish();
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                finish();
+                            }
+                        });
                     } else if (s.equals("senderNameEcho")) {
                         HashMap<String, String> subjectHash = new HashMap();
                         subjectHash.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "subjectHash");
@@ -115,6 +126,14 @@ public class EmailHandlingActivity extends AppCompatActivity {
                         HashMap<String, String> contentsHash = new HashMap();
                         contentsHash.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "subjectHash");
                         tts2.speak("Please tell message contents", TextToSpeech.QUEUE_FLUSH, contentsHash);
+                    } else if (s.equals("senderNameError")) {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                finish();
+                                startActivity(getIntent());
+                            }
+                        });
                     }
                 }
 
@@ -184,6 +203,11 @@ public class EmailHandlingActivity extends AppCompatActivity {
                 String result = matches.get(0);
 
                 mSpeechRecognizer.stopListening();
+
+                if (result.equals("exit")) {
+                    finish();
+                }
+
                 Log.i("onResult", "onresult");
                 if (senderFlag) {
                     senderFlag = false;
@@ -193,12 +217,37 @@ public class EmailHandlingActivity extends AppCompatActivity {
                         tts2.speak(result, TextToSpeech.QUEUE_FLUSH, senderNameEcho);
                     } else {
                         Log.i("result", result);
-                        senderEmail = parseMailId(result);
                         EditText text = findViewById(R.id.editText2);
-                        text.setText(senderEmail);
-                        HashMap<String, String> senderNameEcho = new HashMap();
-                        senderNameEcho.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "senderNameEcho");
-                        tts2.speak(result, TextToSpeech.QUEUE_FLUSH, senderNameEcho);
+
+                        if (result.contains("@")) {
+                            senderEmail = parseMailId(result);
+                        }
+                        else {
+                            senderEmail = null;
+                            for (int i = 0; i < aNameFromContacts.length; i++) {
+                                if (aNameFromContacts[i] != null) {
+                                    if (result.toLowerCase().replaceAll(" ", "").equals(aNameFromContacts[i].toLowerCase().replaceAll(" ", ""))) {
+                                        if (anEmailFromContacts[i] != null)
+                                            senderEmail = anEmailFromContacts[i];
+                                        else
+                                            senderEmail = null;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (senderEmail == null) {
+                            HashMap<String, String> senderNameError = new HashMap();
+                            senderNameError.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, null);
+                            tts2.speak(result, TextToSpeech.QUEUE_ADD, senderNameError);
+                            tts2.speak("No such contact name exists or the email for this contact name is not available. Please enter valid email address", TextToSpeech.QUEUE_ADD, senderNameError);
+                        }
+                        else {
+                            text.setText(senderEmail);
+                            HashMap<String, String> senderNameEcho = new HashMap();
+                            senderNameEcho.put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "senderNameEcho");
+                            tts2.speak(result, TextToSpeech.QUEUE_FLUSH, senderNameEcho);
+                        }
                     }
                 }
                 if (subjectFlag) {
@@ -238,6 +287,7 @@ public class EmailHandlingActivity extends AppCompatActivity {
     @Override
     public void onStop() {
         super.onStop();
+        Log.i("mail activity", "stop");
         mSpeechRecognizer.stopListening();
         mSpeechRecognizer.destroy();
         tts2.stop();
@@ -247,9 +297,9 @@ public class EmailHandlingActivity extends AppCompatActivity {
     public void onPause() {
         super.onPause();
         Log.i("onapause", "onpause");
-        mSpeechRecognizer.stopListening();
-        mSpeechRecognizer.destroy();
-        tts2.stop();
+        //mSpeechRecognizer.stopListening();
+        //mSpeechRecognizer.destroy();
+        //tts2.stop();
     }
 
     private void sendEmail(String senderEmail, String subject, String messageContent) {
@@ -278,9 +328,9 @@ public class EmailHandlingActivity extends AppCompatActivity {
 
     private String parseMailId(String result) {
         String parsed = result.replace(" at ", "@");
-        parsed = parsed.toLowerCase();
-        parsed = parsed.replace(" dot ", ".");
         parsed = parsed.replace(" ", "");
+        parsed = parsed.toLowerCase();
+        parsed = parsed.replace("dot", ".");
         return parsed;
 
     }

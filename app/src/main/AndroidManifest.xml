@@ -28,6 +28,17 @@
         <activity android:name="EmailHandlingActivity"
             android:exported="true">
         </activity>
+        <service android:name="se.coep.org.in.smart_assistant_for_blind.NotificationService"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+
+            <intent-filter>
+
+                <action android:name="android.service.notification.NotificationListenerService" />
+
+            </intent-filter>
+
+        </service>
     </application>
 
 </manifest>

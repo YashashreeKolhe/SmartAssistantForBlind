@@ -189,6 +189,10 @@ public class MessageHandlingActivity extends AppCompatActivity {
                 String result = matches.get(0);
 
                 mSpeechRecognizer.stopListening();
+
+                if (result.equals("exit")) {
+                    finish();
+                }
                 //senderFlag = true;
 
                 if (senderFlag) {
