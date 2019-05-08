@@ -227,9 +227,10 @@ public class EmailHandlingActivity extends AppCompatActivity {
                             for (int i = 0; i < aNameFromContacts.length; i++) {
                                 if (aNameFromContacts[i] != null) {
                                     if (result.toLowerCase().replaceAll(" ", "").equals(aNameFromContacts[i].toLowerCase().replaceAll(" ", ""))) {
-                                        if (anEmailFromContacts[i] != null)
+                                        if (anEmailFromContacts[i] != null) {
                                             senderEmail = anEmailFromContacts[i];
-                                        else
+                                            text.setText(senderEmail);
+                                        }else
                                             senderEmail = null;
                                     }
                                 }
@@ -315,7 +316,7 @@ public class EmailHandlingActivity extends AppCompatActivity {
             tts2.speak("Mail sent successfully", TextToSpeech.QUEUE_FLUSH, afterEmail);
         } catch (Exception e) {
             Log.e("SendMail", e.getMessage(), e);
-            tts2.speak("Cannot send mail! Pleaase try again.", TextToSpeech.QUEUE_FLUSH, afterEmail);
+            tts2.speak("Cannot send mail! Please try again.", TextToSpeech.QUEUE_FLUSH, afterEmail);
         }
 
         /*try {

@@ -66,6 +66,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean isPhoneCalling = false;
     private boolean mismatchFlag = false;
     private boolean messageFlag = true;
+    private int openApplicationFlag = 0;
     private boolean mailNotificationFlag = true;
     private boolean isThereNotification = false;
     private boolean newNotificationsFlag = false;
@@ -276,6 +277,7 @@ public class MainActivity extends AppCompatActivity {
                                                 } else {
                                                     handleCalls(result);
                                                     Log.i("after call", "after call");
+                                                    mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
                                                 }
                                             } else if (result.startsWith("open") || result.startsWith("launch")) {
                                                 handleApplications(result);
@@ -392,7 +394,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void handleApplications(String result) {
         tts.shutdown();
-        if (result.toLowerCase().replaceAll(" ", "").equals("opentfdetect")) {
+        if (result.toLowerCase().replaceAll(" ", "").equals("openblindassistant")) {
+            openApplicationFlag = 1;
             PackageManager pm = this.getPackageManager();
             Intent intent = pm.getLaunchIntentForPackage("org.tensorflow.demo");
             if (intent != null) {
@@ -407,6 +410,7 @@ public class MainActivity extends AppCompatActivity {
         Log.i("MainActivity", "call");
         int i;
         Log.i("length", Integer.toString(aNameFromContacts.length));
+
         for (i = 0; i < aNameFromContacts.length; i++) {
             if (aNameFromContacts[i] != null) {
                 if ((aNameFromContacts[i].replaceAll(" ", "").toLowerCase()).equals(result.replaceAll(" ", "").replace("call", "").toLowerCase())) {
@@ -618,16 +622,20 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
-        if ((callFlag && isPhoneCalling) || messageFlag || mailFlag) {
+        if ((callFlag && isPhoneCalling) || messageFlag || mailFlag || (openApplicationFlag==2)) {
             Log.i("resume", "resume");
             callFlag = false;
             messageFlag = false;
             mailFlag = false;
+            openApplicationFlag = 0;
             /*if (isThereNotification) {
                 speakOutNotifications();
             }*/
             startSTTandTTS();
             //mSpeechRecognizer.startListening(mSpeechRecognizerIntent);
+        }
+        if (openApplicationFlag == 1) {
+            openApplicationFlag = 2;
         }
     }
 
